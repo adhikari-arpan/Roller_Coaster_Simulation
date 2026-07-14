@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+:root {
+  --sans: 'Outfit', 'Inter', system-ui, sans-serif;
+  --heading: 'Outfit', 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #06050b;
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100% !important;
+  max-width: 1280px !important;
+  margin: 0 auto;
+  padding: 0;
+  border: none !important;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--heading);
+  margin: 0;
+  color: #fff;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
