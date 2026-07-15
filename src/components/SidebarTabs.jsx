@@ -3,7 +3,7 @@ import {
   Play, Pause, Users, Clock, AlertTriangle,
   CloudRain, Sun, DollarSign, Gauge, Smile,
   Flame, Volume2, VolumeX, ShieldAlert, Sparkles,
-  BookOpen, Sliders, BarChart3, Binary
+  BookOpen, Sliders, BarChart3, Binary, Ban
 } from 'lucide-react';
 import { soundManager } from '../simulation/audio';
 
@@ -218,6 +218,24 @@ export default function SidebarTabs({
                 />
               </div>
 
+              <div className="slider-group">
+                <div className="slider-labels">
+                  <label className="flex items-center gap-1"><Ban size={11} className="text-rose-400" /> Max Queue Length</label>
+                  <span className="font-mono text-purple-400 text-xs">{settings.maxQueueLength} guests</span>
+                </div>
+                <input
+                  type="range"
+                  min="10"
+                  max="80"
+                  value={settings.maxQueueLength}
+                  onChange={(e) => setSettings(prev => ({ ...prev, maxQueueLength: parseInt(e.target.value) }))}
+                  className="slider-bar"
+                />
+                <p className="text-[9px] text-slate-500 mt-1 leading-snug">
+                  Guests balk (turn away) once the regular line hits this size. VIP lane caps at half this value.
+                </p>
+              </div>
+
               <div className="capacity-selector-row mt-1">
                 <label className="text-[10px] text-slate-400 font-semibold block mb-1">Seating Capacity</label>
                 <div className="flex gap-2">
@@ -370,6 +388,19 @@ export default function SidebarTabs({
                   </span>
                 </div>
               </div>
+
+              <div className="metric-card">
+                <div className="card-top">
+                  <Ban size={13} className="text-orange-400" />
+                  <span className="card-label">Turned Away</span>
+                </div>
+                <div className="card-value font-mono text-base text-orange-400">
+                  {stats.totalBalked || 0}
+                  <span className="text-[9px] text-slate-400 font-normal block">
+                    (queue full)
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Satisfaction bar */}
@@ -460,9 +491,17 @@ export default function SidebarTabs({
               </ul>
             </div>
 
+            {/* Balking behavior explanation */}
+            <div className="theory-section-detail text-[11px] text-slate-300 space-y-2">
+              <h4 className="font-bold text-xs text-white border-b border-slate-800 pb-1 mt-1">3. Balking (Finite Queue Capacity)</h4>
+              <p className="leading-relaxed text-slate-400">
+                This models a finite-capacity queue (M/M/c/K). Once the regular line reaches the configured <code className="text-purple-400 text-[10px]">maxQueueLength</code> (K), arriving guests balk — they observe the line, decline to join, and leave immediately rather than waiting indefinitely. The VIP lane balks independently at half that capacity.
+              </p>
+            </div>
+
             {/* Breakdown state modeling */}
             <div className="theory-section-detail text-[11px] text-slate-300 space-y-2">
-              <h4 className="font-bold text-xs text-white border-b border-slate-800 pb-1 mt-1">3. Mechanical Failures (DES Halts)</h4>
+              <h4 className="font-bold text-xs text-white border-b border-slate-800 pb-1 mt-1">4. Mechanical Failures (DES Halts)</h4>
               <p className="leading-relaxed text-slate-400">
                 We introduce random interruptions modeled as a failure rate. When active:
               </p>
