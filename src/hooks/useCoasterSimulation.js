@@ -76,6 +76,7 @@ export function useCoasterSimulation() {
     capacity: 12,        // coaster capacity
     speedMultiplier: 1,  // simulation speed
     rideDuration: 12,    // target duration in seconds
+    maxQueueLength: 30,  // max people allowed in regular queue before guests balk (turn away)
   });
 
   const settingsRef = useRef(settings);
@@ -127,6 +128,7 @@ export function useCoasterSimulation() {
     avgWaitTime: 0,
     satisfaction: 100,
     breakdownsCount: 0,
+    totalBalked: 0, // guests turned away because the queue was full
     history: []
   });
 
@@ -137,7 +139,7 @@ export function useCoasterSimulation() {
   const exitedVisitorsRef = useRef([]);
   const trainRef = useRef({ state: 'empty', progress: 0, passengers: [], speed: 0, tripsCompleted: 0 });
   const mechanicRef = useRef({ x: 100, y: 520, state: 'idle', targetX: 100, targetY: 520 });
-  const statsRef = useRef({ totalArrivals: 0, totalServed: 0, totalWaitTime: 0, maxWaitTime: 0, totalRevenue: 0, avgWaitTime: 0, satisfaction: 100, breakdownsCount: 0, history: [] });
+  const statsRef = useRef({ totalArrivals: 0, totalServed: 0, totalWaitTime: 0, maxWaitTime: 0, totalRevenue: 0, avgWaitTime: 0, satisfaction: 100, breakdownsCount: 0, totalBalked: 0, history: [] });
   const isBrokenDownRef = useRef(false);
   const weatherRef = useRef('sunny');
   const isPausedRef = useRef(true); // Start paused so Web Audio is triggered on user action
@@ -253,19 +255,34 @@ export function useCoasterSimulation() {
       });
     }
 
+    // Respect the VIP lane capacity too - excess VIPs balk just like regular guests would
+    const maxVipQueue = Math.max(5, Math.round(settingsRef.current.maxQueueLength / 2));
+    const room = Math.max(0, maxVipQueue - vipQueueRef.current.length);
+    const admitted = newVips.slice(0, room);
+    const turnedAway = newVips.length - admitted.length;
+
     setVipQueue(prev => {
-      const next = [...prev, ...newVips];
+      const next = [...prev, ...admitted];
       vipQueueRef.current = next;
       return next;
     });
 
     setStats(prev => {
-      const next = { ...prev, totalArrivals: prev.totalArrivals + count };
+      const next = {
+        ...prev,
+        totalArrivals: prev.totalArrivals + count,
+        totalBalked: prev.totalBalked + turnedAway
+      };
       statsRef.current = next;
       return next;
     });
 
-    addAnnouncement(`🌟 VIP ALERT: A group of ${count} VIPs has entered the priority lane!`, "success");
+    if (admitted.length > 0) {
+      addAnnouncement(`🌟 VIP ALERT: A group of ${admitted.length} VIPs has entered the priority lane!`, "success");
+    }
+    if (turnedAway > 0) {
+      addAnnouncement(`🚫 VIP lane full — ${turnedAway} VIP${turnedAway > 1 ? 's' : ''} turned away.`, "alert");
+    }
   };
 
   const toggleWeather = () => {
@@ -359,23 +376,38 @@ export function useCoasterSimulation() {
           });
         }
 
-        // Distribute to queues
+        // Distribute to queues (respecting capacity — guests balk if the line is too long)
         let addedRegular = 0;
         let addedVips = 0;
+        let balkedCount = 0;
+        const maxQueue = settingsRef.current.maxQueueLength;
+        const maxVipQueue = Math.max(5, Math.round(maxQueue / 2));
 
         newArrivals.forEach(guest => {
           if (guest.vip) {
-            vipQueueRef.current.push(guest);
-            addedVips++;
+            if (vipQueueRef.current.length < maxVipQueue) {
+              vipQueueRef.current.push(guest);
+              addedVips++;
+            } else {
+              balkedCount++;
+            }
           } else {
-            regularQueueRef.current.push(guest);
-            addedRegular++;
+            if (regularQueueRef.current.length < maxQueue) {
+              regularQueueRef.current.push(guest);
+              addedRegular++;
+            } else {
+              balkedCount++;
+            }
           }
         });
 
         // Update counts
         setStats(prev => {
-          const next = { ...prev, totalArrivals: prev.totalArrivals + newArrivals.length };
+          const next = {
+            ...prev,
+            totalArrivals: prev.totalArrivals + newArrivals.length,
+            totalBalked: prev.totalBalked + balkedCount
+          };
           statsRef.current = next;
           return next;
         });
@@ -384,6 +416,9 @@ export function useCoasterSimulation() {
         if (addedVips > 0) {
           setVipQueue([...vipQueueRef.current]);
           addAnnouncement(`⭐ VIP Guest arrived in fast line!`, 'info');
+        }
+        if (balkedCount > 0) {
+          addAnnouncement(`🚫 ${balkedCount} visitor${balkedCount > 1 ? 's' : ''} turned away — queue full!`, 'alert');
         }
       }
 
@@ -468,48 +503,18 @@ export function useCoasterSimulation() {
       setVipQueue(vipQueueUpdate);
 
       // --- 3. EXITED VISITORS WALKING AWAY ---
+      // Each guest walks a fixed distance along EXIT_PATH from the station and is removed
+      // once they've covered the full path length (i.e. they've actually left the park).
+      const exitPathLen = getPathLength(EXIT_PATH);
       const exitedUpdate = exitedVisitorsRef.current.map(guest => {
-        const targetPos = EXIT_PATH[EXIT_PATH.length - 1];
-        const dx = targetPos.x - guest.x;
-        const dy = targetPos.y - guest.y;
-        const distance = Math.sqrt(dx*dx + dy*dy);
-        
-        if (distance <= 5) {
-          return null; // remove guest
-        }
-        
-        // Walk along exit path
-        // We find the current segment of EXIT_PATH
-        const stepSize = 100 * simDt;
-        const exitPathLen = getPathLength(EXIT_PATH);
-        // Exited guests just walk towards exit nodes sequentially
-        let nextX = guest.x;
-        let nextY = guest.y;
-        
-        // Find next target node
-        let currentTarget = EXIT_PATH[1]; // Exit turn
-        if (Math.abs(guest.x - EXIT_PATH[0].x) < 5 && Math.abs(guest.y - EXIT_PATH[0].y) < 20) {
-          currentTarget = EXIT_PATH[1];
-        }
-        if (Math.abs(guest.x - EXIT_PATH[1].x) < 5 && Math.abs(guest.y - EXIT_PATH[1].y) < 5) {
-          currentTarget = EXIT_PATH[2];
-        }
-        if (Math.abs(guest.x - EXIT_PATH[2].x) < 5 && Math.abs(guest.y - EXIT_PATH[2].y) < 5) {
-          currentTarget = EXIT_PATH[3];
-        }
-        
-        const gDx = currentTarget.x - guest.x;
-        const gDy = currentTarget.y - guest.y;
-        const gDist = Math.sqrt(gDx*gDx + gDy*gDy);
-        const gAngle = Math.atan2(gDy, gDx);
-        
-        nextX += Math.cos(gAngle) * Math.min(stepSize, gDist);
-        nextY += Math.sin(gAngle) * Math.min(stepSize, gDist);
-        
+        const traveled = (guest.exitTraveled ?? 0) + 100 * simDt;
+        if (traveled >= exitPathLen) return null; // reached the gate — guest has left
+        const pos = getPositionOnPath(EXIT_PATH, Math.max(0, traveled));
         return {
           ...guest,
-          x: nextX,
-          y: nextY
+          x: pos.x,
+          y: pos.y,
+          exitTraveled: traveled
         };
       }).filter(Boolean);
       
@@ -747,12 +752,13 @@ export function useCoasterSimulation() {
             addAnnouncement("🚪 Coaster parked in station. Unloading passengers.", 'info');
           }
         } else if (train.state === 'unloading') {
-          // Passengers exit to Exit Path
-          const passengersToUnload = train.passengers.map(guest => ({
+          // Passengers exit to Exit Path — staggered so they walk away one after another
+          const passengersToUnload = train.passengers.map((guest, idx) => ({
             ...guest,
             status: 'exiting',
-            x: EXIT_PATH[0].x + (Math.random() * 15 - 7.5),
-            y: EXIT_PATH[0].y + (Math.random() * 10 - 5)
+            x: EXIT_PATH[0].x,
+            y: EXIT_PATH[0].y,
+            exitTraveled: -idx * 12 // negative offset staggers departure along the path
           }));
 
           // Queue exited guests
