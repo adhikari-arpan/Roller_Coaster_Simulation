@@ -732,6 +732,17 @@ input:checked + .slider-switch:before {
   animation: flash 1s infinite;
 }
 
+/* Footer social links */
+.footer-social-links a {
+  display: inline-flex;
+  color: #64748b;
+  transition: color 0.2s;
+}
+
+.footer-social-links a:hover {
+  color: var(--neon-cyan);
+}
+
 /* Responsive queries */
 @media (max-width: 1100px) {
   .app-split-layout {
