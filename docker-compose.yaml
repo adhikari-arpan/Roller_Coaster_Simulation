@@ -1,0 +1,7 @@
+services:
+  web:
+    build: .
+    image: roller-coaster-sim
+    container_name: coaster
+    ports:
+      - "8080:80"
